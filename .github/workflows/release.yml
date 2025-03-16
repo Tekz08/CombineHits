@@ -1,0 +1,24 @@
+name: Release WoW Addon
+
+# Trigger the workflow when a tag is pushed (e.g., v1.0.0)
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      # Check out the repository code
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetches full history for changelog generation
+
+      # Use the BigWigs Packager to build and upload the addon
+      - uses: BigWigsMods/packager@v2
+        env:
+          CF_API_KEY: ${{ secrets.CF_API_KEY }}
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}  # Provided by GitHub automatically
+        with:
+          args: -p 1221684
