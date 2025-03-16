@@ -1,0 +1,10 @@
+## Interface: 110200
+## Title: CombineHits
+## Notes: Combines multiple hits from Fury Warrior abilities into a single display
+## Author: Your Name
+## Version: 1.0
+## SavedVariables: CombineHitsDB
+## X-Category: Combat
+
+# Core files
+CombineHits.lua
