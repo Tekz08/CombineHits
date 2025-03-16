@@ -106,12 +106,6 @@ local FURY_ABILITIES = {
     [163558] = { name = "Execute", hits = 2, isExecute = true },  -- Execute 2
     [5308] = { name = "Execute", hits = 2, isExecute = true },    -- Low health Execute
     
-    -- Whirlwind
-    [199667] = { name = "Whirlwind", hits = 2 }, -- Whirlwind 1
-    [44949] = { name = "Whirlwind", hits = 2 },  -- Whirlwind 2
-    [199852] = { name = "Whirlwind", hits = 2 }, -- WW Cleave 1
-    [199851] = { name = "Whirlwind", hits = 2 }, -- WW Cleave 2
-    
     -- Single hit abilities
     [23881] = { name = "Bloodthirst", hits = 1 },
     [315720] = { name = "Onslaught", hits = 1 },
