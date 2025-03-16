@@ -17,6 +17,7 @@ addon.defaults = {
     critColor = { r = 1, g = 0.5, b = 0 },
     blacklistedSpells = {},
     combineWindow = 2.5,
+    leaderboard = {}, -- Store ability records
 }
 
 -- Fury Warrior ability info
@@ -142,6 +143,7 @@ end
 -- Initialize UI after game is fully loaded
 function CH:InitializeUI()
     CH:CreateMainFrame()
+    CH:CreateLeaderboardFrame()
     CH:CreateDisplayFrames()
     CH:UpdateFrameSizes()
     CH:RegisterEvents()
@@ -154,6 +156,9 @@ function CH:CreateMainFrame()
     
     -- Set size
     f:SetSize(CombineHitsDB.frameWidth, CombineHitsDB.frameHeight)
+    
+    -- Set frame strata
+    f:SetFrameStrata("MEDIUM")
     
     -- Set initial position
     f:ClearAllPoints()
@@ -251,8 +256,21 @@ end
 
 -- Display a hit in the frame
 function CH:DisplayHit(sequence)
+    -- Check if this is a new record
+    if sequence.damage > 0 then
+        local currentRecord = CombineHitsDB.leaderboard[sequence.name]
+        if not currentRecord or sequence.damage > currentRecord.damage then
+            CombineHitsDB.leaderboard[sequence.name] = {
+                damage = sequence.damage,
+                timestamp = time(),
+                zone = GetZoneText(),
+                subZone = GetSubZoneText(),
+            }
+        end
+    end
+
     -- Format damage number with commas
-    local formattedDamage = tostring(sequence.damage):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+    local formattedDamage = CH:FormatNumber(sequence.damage)
     
     -- Shift existing hits down
     for i = #addon.displayFrames, 2, -1 do
@@ -475,9 +493,132 @@ SlashCmdList["COMBINEHITS"] = function(msg)
         CH:UpdateFrameSizes()
     elseif cmd == "show" or cmd == "" then
         CH:ToggleFrame()
+    elseif cmd == "lb" then
+        if addon.leaderboardFrame:IsShown() then
+            addon.leaderboardFrame:Hide()
+        else
+            CH:UpdateLeaderboard()
+            addon.leaderboardFrame:Show()
+        end
     else
         print("CombineHits commands:")
         print("  /ch - Toggle frame visibility")
         print("  /ch reset - Reset position and size to center")
+        print("  /ch lb - Toggle leaderboard")
     end
+end
+
+-- Create the leaderboard frame
+function CH:CreateLeaderboardFrame()
+    local f = CreateFrame("Frame", "CombineHitsLeaderboard", UIParent, "BasicFrameTemplateWithInset")
+    addon.leaderboardFrame = f
+    
+    -- Set size and position
+    f:SetSize(300, 480)
+    f:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    f:SetFrameStrata("HIGH")
+    
+    -- Set title text
+    f.TitleText:SetText("Big Hits Leaderboard")
+    
+    -- Create the content frame with explicit size
+    -- Account for template borders (16px) and title bar (24px)
+    local content = CreateFrame("Frame", nil, f)
+    content:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -8)
+    content:SetSize(300, 480) -- 400 - 16 for width, 500 - 24 for height
+    f.content = content
+    
+    -- Create clear button
+    local clearButton = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    clearButton:SetSize(100, 25)
+    clearButton:SetPoint("BOTTOM", f, "BOTTOM", 0, 10)
+    clearButton:SetText("Clear Records")
+    clearButton:SetScript("OnClick", function()
+        StaticPopup_Show("COMBINEHITS_CLEAR_LEADERBOARD")
+    end)
+    
+    -- Create confirmation dialog
+    StaticPopupDialogs["COMBINEHITS_CLEAR_LEADERBOARD"] = {
+        text = "Are you sure you want to clear all leaderboard records?",
+        button1 = "Yes",
+        button2 = "No",
+        OnAccept = function()
+            CombineHitsDB.leaderboard = {}
+            print("CombineHits: Leaderboard has been cleared.")
+            CH:UpdateLeaderboard()
+        end,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+        preferredIndex = 3,
+    }
+    
+    f:Hide()
+    return f
+end
+
+-- Update leaderboard display
+function CH:UpdateLeaderboard()
+    local frame = addon.leaderboardFrame
+    local content = frame.content
+    
+    -- Clear existing entries
+    for _, child in pairs({content:GetChildren()}) do
+        child:Hide()
+        child:SetParent(nil)
+    end
+    
+    -- Sort abilities alphabetically
+    local sortedRecords = {}
+    for ability, record in pairs(CombineHitsDB.leaderboard) do
+        table.insert(sortedRecords, {name = ability, data = record})
+    end
+    table.sort(sortedRecords, function(a, b) return a.name < b.name end)
+    
+    -- Calculate content width for entries (account for padding)
+    local contentWidth = content:GetWidth() - 20
+    local yOffset = 0
+    
+    -- Create entries for each record
+    for i, record in ipairs(sortedRecords) do
+        -- Create entry container
+        local entry = CreateFrame("Frame", nil, content)
+        entry:SetSize(contentWidth, 65)
+        entry:SetPoint("TOPLEFT", content, "TOPLEFT", 10, -yOffset - 30)
+        
+        -- Ability name and damage
+        local header = entry:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        header:SetPoint("TOPLEFT", entry, "TOPLEFT", 0, 0)
+        header:SetWidth(contentWidth)
+        header:SetJustifyH("LEFT")
+        header:SetText(string.format("%s: |cffFFD700%s|r", 
+            record.name, 
+            CH:FormatNumber(record.data.damage)))
+        
+        -- Location
+        local location = entry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        location:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 20, -5)
+        location:SetWidth(contentWidth - 20)
+        location:SetJustifyH("LEFT")
+        local locationText = record.data.zone
+        if record.data.subZone and record.data.subZone ~= "" then
+            locationText = locationText .. " - " .. record.data.subZone
+        end
+        location:SetText("|cffAAAAAA" .. locationText .. "|r")
+        
+        -- Time
+        local timeString = date("%m/%d/%Y %I:%M %p", record.data.timestamp)
+        local time = entry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        time:SetPoint("TOPLEFT", location, "BOTTOMLEFT", 0, -5)
+        time:SetWidth(contentWidth - 20)
+        time:SetJustifyH("LEFT")
+        time:SetText("|cffAAAAAA" .. timeString .. "|r")
+        
+        yOffset = yOffset + 65 -- Height of entry plus spacing
+    end
+end
+
+-- Format number with commas
+function CH:FormatNumber(number)
+    return tostring(number):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
 end
