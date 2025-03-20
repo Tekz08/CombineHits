@@ -82,7 +82,45 @@ local ABILITY_DAMAGE_SPELLS = {
             [435791] = true,    -- Lightning Strike
             [460670] = true,    -- Lightning Strike Ground Current
         }
-    }
+    },
+    -- Onslaught
+    [315720] = { -- Onslaught cast
+        name = "Onslaught",
+        spellId = 315720,
+        damageSpells = {
+            [396718] = true,  -- Onslaught damage
+        }
+    },
+    -- Thunderous Roar (special tracking)
+    [384318] = { -- Thunderous Roar cast
+        name = "Thunderous Roar",
+        spellId = 384318,
+        isThunderousRoar = true,  -- Flag for special handling
+        damageSpells = {
+            [384318] = true,  -- Initial hits
+            [397364] = true,  -- DoT damage
+        }
+    },
+    -- Ravager (special tracking)
+    [228920] = { -- Ravager cast
+        name = "Ravager",
+        spellId = 228920,
+        isRavager = true,  -- Flag for special handling
+        damageSpells = {
+            [156287] = true,  -- Update to correct damage spell ID
+        }
+    },
+    -- Odyn's Fury (special tracking)
+    [385059] = { -- Odyn's Fury cast
+        name = "Odyn's Fury",
+        spellId = 385059,
+        isOdynsFury = true,  -- Flag for special handling
+        damageSpells = {
+            [385060] = true,  -- Main hand and DoT
+            [385061] = true,  -- Off-hand
+            [385062] = true,  -- Additional damage
+        }
+    },
 }
 
 -- Whirlwind buff tracking
@@ -108,11 +146,48 @@ local FURY_ABILITIES = {
     
     -- Single hit abilities
     [23881] = { name = "Bloodthirst", hits = 1 },
-    [315720] = { name = "Onslaught", hits = 1 },
+    [396718] = { name = "Onslaught", hits = 1 },  -- Update damage spell ID
 }
 
 -- Track active ability hits
 addon.activeSequence = nil  -- Current active sequence being tracked
+
+-- Add to the top with other constants
+local THUNDEROUS_ROAR = {
+    CAST_ID = 384318,
+    DOT_ID = 397364,
+    name = "Thunderous Roar",
+    active = false,
+    targets = {},
+    totalDamage = 0,
+}
+
+-- Add near the top with other constants
+local RAVAGER = {
+    CAST_ID = 228920,
+    DAMAGE_ID = 156287,  -- Add damage spell ID
+    name = "Ravager",
+    active = false,
+    totalDamage = 0,
+    startTime = 0,
+    DURATION = 11,  -- Duration in seconds to track damage
+}
+
+-- Add near the top with other constants
+local ODYNS_FURY = {
+    CAST_ID = 385059,
+    DAMAGE_IDS = {
+        [385060] = true,  -- Main hand damage and DoT
+        [385061] = true,  -- Off-hand damage
+        [385062] = true,  -- Additional damage
+    },
+    name = "Odyn's Fury",
+    active = false,
+    targets = {},
+    totalDamage = 0,
+    startTime = 0,
+    DURATION = 5,  -- Failsafe duration in seconds
+}
 
 -- Initialize saved variables
 function CH:Init()
@@ -344,14 +419,190 @@ function CH:CreateNewHitSequence(abilityInfo, now)
     }
 end
 
--- Combat log processing
+-- Add new function for Thunderous Roar tracking
+function CH:HandleThunderousRoar(eventType, destGUID, spellId, amount, critical)
+    if eventType == "SPELL_CAST_SUCCESS" and spellId == THUNDEROUS_ROAR.CAST_ID then
+        -- Reset tracking for new cast
+        THUNDEROUS_ROAR.active = true
+        THUNDEROUS_ROAR.targets = {}
+        THUNDEROUS_ROAR.totalDamage = 0
+        
+    elseif THUNDEROUS_ROAR.active then
+        if eventType == "SPELL_AURA_APPLIED" and spellId == THUNDEROUS_ROAR.DOT_ID then
+            -- Track new target
+            THUNDEROUS_ROAR.targets[destGUID] = true
+            
+        elseif eventType == "SPELL_DAMAGE" and spellId == THUNDEROUS_ROAR.CAST_ID then
+            -- Add initial hit damage
+            THUNDEROUS_ROAR.totalDamage = THUNDEROUS_ROAR.totalDamage + (amount or 0)
+            
+        elseif eventType == "SPELL_PERIODIC_DAMAGE" and spellId == THUNDEROUS_ROAR.DOT_ID then
+            -- Add DoT damage
+            THUNDEROUS_ROAR.totalDamage = THUNDEROUS_ROAR.totalDamage + (amount or 0)
+            
+        elseif eventType == "SPELL_AURA_REMOVED" and spellId == THUNDEROUS_ROAR.DOT_ID then
+            -- Remove target from tracking
+            THUNDEROUS_ROAR.targets[destGUID] = nil
+            
+            -- Check if this was the last target
+            local remainingTargets = 0
+            for _ in pairs(THUNDEROUS_ROAR.targets) do
+                remainingTargets = remainingTargets + 1
+            end
+            
+            if remainingTargets == 0 and THUNDEROUS_ROAR.totalDamage > 0 then
+                -- All targets finished, display total damage
+                local sequence = {
+                    name = THUNDEROUS_ROAR.name,
+                    damage = THUNDEROUS_ROAR.totalDamage,
+                    hasCrit = true,  -- Always show as crit color due to multiple hits
+                }
+                CH:DisplayHit(sequence)
+                
+                -- Reset tracking
+                THUNDEROUS_ROAR.active = false
+                THUNDEROUS_ROAR.totalDamage = 0
+            end
+        end
+    end
+end
+
+-- Add new function for Ravager tracking
+function CH:HandleRavager(eventType, spellId, amount, critical)
+    local now = GetTime()
+    
+    if eventType == "SPELL_CAST_SUCCESS" and spellId == RAVAGER.CAST_ID then
+        -- Start new Ravager tracking
+        RAVAGER.active = true
+        RAVAGER.totalDamage = 0
+        RAVAGER.startTime = now
+        
+        -- Set timer to display total after duration
+        C_Timer.After(RAVAGER.DURATION, function()
+            if RAVAGER.active and RAVAGER.totalDamage > 0 then
+                -- Display total damage
+                local sequence = {
+                    name = RAVAGER.name,
+                    damage = RAVAGER.totalDamage,
+                    hasCrit = true,  -- Always show as crit color due to multiple hits
+                }
+                CH:DisplayHit(sequence)
+                
+                -- Reset tracking
+                RAVAGER.active = false
+                RAVAGER.totalDamage = 0
+            end
+        end)
+        
+    elseif RAVAGER.active and eventType == "SPELL_DAMAGE" and spellId == RAVAGER.DAMAGE_ID then
+        -- Add damage if within duration window
+        if (now - RAVAGER.startTime) <= RAVAGER.DURATION then
+            RAVAGER.totalDamage = RAVAGER.totalDamage + (amount or 0)
+        end
+    end
+end
+
+-- Add new function for Odyn's Fury tracking
+function CH:HandleOdynsFury(eventType, destGUID, spellId, amount, critical)
+    local now = GetTime()
+    
+    if eventType == "SPELL_CAST_SUCCESS" and spellId == ODYNS_FURY.CAST_ID then
+        -- Start new Odyn's Fury tracking
+        ODYNS_FURY.active = true
+        ODYNS_FURY.targets = {}
+        ODYNS_FURY.totalDamage = 0
+        ODYNS_FURY.startTime = now
+        
+        -- Set failsafe timer
+        C_Timer.After(ODYNS_FURY.DURATION, function()
+            if ODYNS_FURY.active then
+                -- Display total damage if we haven't already
+                local sequence = {
+                    name = ODYNS_FURY.name,
+                    damage = ODYNS_FURY.totalDamage,
+                    hasCrit = true,  -- Always show as crit color due to multiple hits
+                }
+                CH:DisplayHit(sequence)
+                
+                -- Reset tracking
+                ODYNS_FURY.active = false
+                ODYNS_FURY.totalDamage = 0
+                ODYNS_FURY.targets = {}
+            end
+        end)
+        
+    elseif ODYNS_FURY.active then
+        -- Check if we've exceeded the failsafe duration
+        if (now - ODYNS_FURY.startTime) > ODYNS_FURY.DURATION then
+            ODYNS_FURY.active = false
+            return
+        end
+        
+        if eventType == "SPELL_DAMAGE" and ODYNS_FURY.DAMAGE_IDS[spellId] then
+            -- Add direct damage
+            ODYNS_FURY.totalDamage = ODYNS_FURY.totalDamage + (amount or 0)
+            
+        elseif eventType == "SPELL_PERIODIC_DAMAGE" and ODYNS_FURY.DAMAGE_IDS[spellId] then
+            -- Add DoT damage
+            ODYNS_FURY.totalDamage = ODYNS_FURY.totalDamage + (amount or 0)
+            
+        elseif eventType == "SPELL_AURA_APPLIED" and ODYNS_FURY.DAMAGE_IDS[spellId] then
+            -- Track new target
+            ODYNS_FURY.targets[destGUID] = true
+            
+        elseif eventType == "SPELL_AURA_REMOVED" and ODYNS_FURY.DAMAGE_IDS[spellId] then
+            -- Remove target from tracking
+            ODYNS_FURY.targets[destGUID] = nil
+            
+            -- Check if this was the last target
+            local remainingTargets = 0
+            for _ in pairs(ODYNS_FURY.targets) do
+                remainingTargets = remainingTargets + 1
+            end
+            
+            if remainingTargets == 0 and ODYNS_FURY.active then
+                -- All targets finished, display total damage
+                local sequence = {
+                    name = ODYNS_FURY.name,
+                    damage = ODYNS_FURY.totalDamage,
+                    hasCrit = true,  -- Always show as crit color due to multiple hits
+                }
+                CH:DisplayHit(sequence)
+                
+                -- Reset tracking
+                ODYNS_FURY.active = false
+                ODYNS_FURY.totalDamage = 0
+            end
+        end
+    end
+end
+
+-- Modify the COMBAT_LOG_EVENT_UNFILTERED function
 function CH:COMBAT_LOG_EVENT_UNFILTERED(...)
-    local timestamp, eventType, _, sourceGUID, _, _, _, destGUID, destName, _, _, spellId, spellName, _, amount, overkill, school, resisted, blocked, absorbed, critical = ...
+    local timestamp, eventType, _, sourceGUID, _, _, _, destGUID, destName, _, _, spellId, spellName, _, amount, _, _, _, _, _, critical = ...
     
     -- Only process player's events
     if sourceGUID ~= UnitGUID("player") then return end
     
     local now = GetTime()
+    
+    -- Handle Thunderous Roar separately
+    if spellId == THUNDEROUS_ROAR.CAST_ID or spellId == THUNDEROUS_ROAR.DOT_ID then
+        CH:HandleThunderousRoar(eventType, destGUID, spellId, amount, critical)
+        return
+    end
+    
+    -- Handle Ravager separately
+    if spellId == RAVAGER.CAST_ID or spellId == RAVAGER.DAMAGE_ID then
+        CH:HandleRavager(eventType, spellId, amount, critical)
+        return
+    end
+    
+    -- Handle Odyn's Fury separately
+    if spellId == ODYNS_FURY.CAST_ID or ODYNS_FURY.DAMAGE_IDS[spellId] then
+        CH:HandleOdynsFury(eventType, destGUID, spellId, amount, critical)
+        return
+    end
     
     -- Track Whirlwind buff
     if eventType == "SPELL_AURA_APPLIED" and spellId == WHIRLWIND_BUFF_ID then
@@ -507,19 +758,17 @@ function CH:CreateLeaderboardFrame()
     local f = CreateFrame("Frame", "CombineHitsLeaderboard", UIParent, "BasicFrameTemplateWithInset")
     addon.leaderboardFrame = f
     
-    -- Set size and position
-    f:SetSize(300, 480)
+    -- Increase width for two columns
+    f:SetSize(600, 480)  -- Doubled width from 300 to 600
     f:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     f:SetFrameStrata("HIGH")
     
-    -- Set title text
     f.TitleText:SetText("Big Hits Leaderboard")
     
     -- Create the content frame with explicit size
-    -- Account for template borders (16px) and title bar (24px)
     local content = CreateFrame("Frame", nil, f)
     content:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -8)
-    content:SetSize(300, 480) -- 400 - 16 for width, 500 - 24 for height
+    content:SetSize(584, 452)  -- Adjusted for wider frame (600 - 16 for borders)
     f.content = content
     
     -- Create clear button
@@ -569,44 +818,80 @@ function CH:UpdateLeaderboard()
     end
     table.sort(sortedRecords, function(a, b) return a.name < b.name end)
     
-    -- Calculate content width for entries (account for padding)
-    local contentWidth = content:GetWidth() - 20
+    -- Calculate content widths for two columns (account for padding)
+    local columnWidth = (content:GetWidth() - 40) / 2  -- 40px for padding between and on sides
     local yOffset = 0
     
-    -- Create entries for each record
-    for i, record in ipairs(sortedRecords) do
-        -- Create entry container
-        local entry = CreateFrame("Frame", nil, content)
-        entry:SetSize(contentWidth, 65)
-        entry:SetPoint("TOPLEFT", content, "TOPLEFT", 10, -yOffset - 30)
+    -- Create entries in two columns
+    for i = 1, #sortedRecords, 2 do
+        -- Create container for this row
+        local leftEntry = CreateFrame("Frame", nil, content)
+        leftEntry:SetSize(columnWidth, 65)
+        leftEntry:SetPoint("TOPLEFT", content, "TOPLEFT", 10, -yOffset - 30)
         
+        -- Left column
         -- Ability name and damage
-        local header = entry:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        header:SetPoint("TOPLEFT", entry, "TOPLEFT", 0, 0)
-        header:SetWidth(contentWidth)
-        header:SetJustifyH("LEFT")
-        header:SetText(string.format("%s: |cffFFD700%s|r", 
-            record.name, 
-            CH:FormatNumber(record.data.damage)))
+        local leftHeader = leftEntry:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        leftHeader:SetPoint("TOPLEFT", leftEntry, "TOPLEFT", 0, 0)
+        leftHeader:SetWidth(columnWidth)
+        leftHeader:SetJustifyH("LEFT")
+        leftHeader:SetText(string.format("%s: |cffFFD700%s|r", 
+            sortedRecords[i].name, 
+            CH:FormatNumber(sortedRecords[i].data.damage)))
         
         -- Location
-        local location = entry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        location:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 20, -5)
-        location:SetWidth(contentWidth - 20)
-        location:SetJustifyH("LEFT")
-        local locationText = record.data.zone
-        if record.data.subZone and record.data.subZone ~= "" then
-            locationText = locationText .. " - " .. record.data.subZone
+        local leftLocation = leftEntry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        leftLocation:SetPoint("TOPLEFT", leftHeader, "BOTTOMLEFT", 20, -5)
+        leftLocation:SetWidth(columnWidth - 20)
+        leftLocation:SetJustifyH("LEFT")
+        local leftLocationText = sortedRecords[i].data.zone
+        if sortedRecords[i].data.subZone and sortedRecords[i].data.subZone ~= "" then
+            leftLocationText = leftLocationText .. " - " .. sortedRecords[i].data.subZone
         end
-        location:SetText("|cffAAAAAA" .. locationText .. "|r")
+        leftLocation:SetText("|cffAAAAAA" .. leftLocationText .. "|r")
         
         -- Time
-        local timeString = date("%m/%d/%Y %I:%M %p", record.data.timestamp)
-        local time = entry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        time:SetPoint("TOPLEFT", location, "BOTTOMLEFT", 0, -5)
-        time:SetWidth(contentWidth - 20)
-        time:SetJustifyH("LEFT")
-        time:SetText("|cffAAAAAA" .. timeString .. "|r")
+        local leftTimeString = date("%m/%d/%Y %I:%M %p", sortedRecords[i].data.timestamp)
+        local leftTime = leftEntry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        leftTime:SetPoint("TOPLEFT", leftLocation, "BOTTOMLEFT", 0, -5)
+        leftTime:SetWidth(columnWidth - 20)
+        leftTime:SetJustifyH("LEFT")
+        leftTime:SetText("|cffAAAAAA" .. leftTimeString .. "|r")
+        
+        -- Right column if we have an entry
+        if sortedRecords[i + 1] then
+            local rightEntry = CreateFrame("Frame", nil, content)
+            rightEntry:SetSize(columnWidth, 65)
+            rightEntry:SetPoint("TOPLEFT", content, "TOPLEFT", columnWidth + 30, -yOffset - 30)
+            
+            -- Ability name and damage
+            local rightHeader = rightEntry:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+            rightHeader:SetPoint("TOPLEFT", rightEntry, "TOPLEFT", 0, 0)
+            rightHeader:SetWidth(columnWidth)
+            rightHeader:SetJustifyH("LEFT")
+            rightHeader:SetText(string.format("%s: |cffFFD700%s|r", 
+                sortedRecords[i + 1].name, 
+                CH:FormatNumber(sortedRecords[i + 1].data.damage)))
+            
+            -- Location
+            local rightLocation = rightEntry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            rightLocation:SetPoint("TOPLEFT", rightHeader, "BOTTOMLEFT", 20, -5)
+            rightLocation:SetWidth(columnWidth - 20)
+            rightLocation:SetJustifyH("LEFT")
+            local rightLocationText = sortedRecords[i + 1].data.zone
+            if sortedRecords[i + 1].data.subZone and sortedRecords[i + 1].data.subZone ~= "" then
+                rightLocationText = rightLocationText .. " - " .. sortedRecords[i + 1].data.subZone
+            end
+            rightLocation:SetText("|cffAAAAAA" .. rightLocationText .. "|r")
+            
+            -- Time
+            local rightTimeString = date("%m/%d/%Y %I:%M %p", sortedRecords[i + 1].data.timestamp)
+            local rightTime = rightEntry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            rightTime:SetPoint("TOPLEFT", rightLocation, "BOTTOMLEFT", 0, -5)
+            rightTime:SetWidth(columnWidth - 20)
+            rightTime:SetJustifyH("LEFT")
+            rightTime:SetText("|cffAAAAAA" .. rightTimeString .. "|r")
+        end
         
         yOffset = yOffset + 65 -- Height of entry plus spacing
     end
