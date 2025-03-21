@@ -8,8 +8,8 @@ A World of Warcraft addon for Fury Warriors that tracks and combines multi-hit a
 
 ## Features
 - Combines multiple hits from abilities into single totals
-- Tracks highest hits in a leaderboard with location and time
-- Movable display frame
+- Tracks highest hits in a leaderboard with location, target, and time
+- Movable/lockable display frame
 
 ## Supported Abilities
 
@@ -27,6 +27,7 @@ A World of Warcraft addon for Fury Warriors that tracks and combines multi-hit a
 ## Commands
 - `/ch` - Toggle display
 - `/ch reset` - Reset position
+- `/ch lock` - Toggle locked frame/transparency
 - `/ch lb` - Toggle leaderboard
 
 ## Installation

@@ -1,158 +1,23 @@
 -- CombineHits addon
-local addonName, addon = ...
-local CH = CreateFrame("Frame", "CombineHitsFrame")
-CH:RegisterEvent("ADDON_LOADED")
-
--- Default settings
-addon.defaults = {
-    framePosition = { x = 0, y = 0, point = "CENTER" },
-    fontSize = 12,
-    maxDisplayed = 4,
-    fadeTime = 3,
-    frameWidth = 260,
-    frameHeight = 150,
-    frameAlpha = 0.9,
-    frameVisible = true,
-    textColor = { r = 1, g = 1, b = 1 },
-    critColor = { r = 1, g = 0.5, b = 0 },
-    blacklistedSpells = {},
-    combineWindow = 2.5,
-    leaderboard = {}, -- Store ability records
-}
-
--- Fury Warrior ability info
-local ABILITY_DAMAGE_SPELLS = {
-    -- Rampage and its damage spell IDs
-    [184367] = { -- Rampage cast
-        name = "Rampage",
-        spellId = 184367,
-        damageSpells = {
-            [184707] = true,  -- Rampage Hit 1
-            [184709] = true,  -- Rampage Hit 2
-            [201364] = true,  -- Rampage Hit 3
-            [201363] = true,  -- Rampage Hit 4
-        }
-    },
-    -- Raging Blow and its damage spell IDs
-    [85288] = { -- Raging Blow cast
-        name = "Raging Blow",
-        spellId = 85288,
-        damageSpells = {
-            [85288] = true,   -- Main hand
-            [96103] = true,   -- Raging Blow 1
-            [85384] = true,   -- Off hand/Raging Blow 2
-        }
-    },
-    -- Execute and its damage spell IDs
-    [5308] = { -- Execute cast
-        name = "Execute",
-        spellId = 5308,
-        damageSpells = {
-            [280849] = true,  -- Execute 1
-            [163558] = true,  -- Execute 2
-            [5308] = true,    -- Low health Execute
-        }
-    },
-    -- Bloodthirst
-    [23881] = { -- Bloodthirst cast
-        name = "Bloodthirst",
-        spellId = 23881,
-        damageSpells = {
-            [23881] = true,   -- Bloodthirst damage
-        }
-    },
-    -- Thunder Clap
-    [6343] = { -- Thunder Clap cast
-        name = "Thunder Clap",
-        spellId = 6343,
-        damageSpells = {
-            [6343] = true,      -- Thunder Clap primary damage
-            [436792] = true,    -- Thunder Clap additional damage
-            [435791] = true,    -- Lightning Strike
-            [460670] = true,    -- Lightning Strike Ground Current
-        }
-    },
-    -- Thunder Blast
-    [435222] = { -- Thunder Blast cast
-        name = "Thunder Blast",
-        spellId = 435222,
-        damageSpells = {
-            [435222] = true,    -- Thunder Blast primary damage
-            [436793] = true,    -- Thunder Blast additional damage
-            [435791] = true,    -- Lightning Strike
-            [460670] = true,    -- Lightning Strike Ground Current
-        }
-    },
-    -- Onslaught
-    [315720] = { -- Onslaught cast
-        name = "Onslaught",
-        spellId = 315720,
-        damageSpells = {
-            [396718] = true,  -- Onslaught damage
-        }
-    },
-    -- Thunderous Roar (special tracking)
-    [384318] = { -- Thunderous Roar cast
-        name = "Thunderous Roar",
-        spellId = 384318,
-        isThunderousRoar = true,  -- Flag for special handling
-        damageSpells = {
-            [384318] = true,  -- Initial hits
-            [397364] = true,  -- DoT damage
-        }
-    },
-    -- Ravager (special tracking)
-    [228920] = { -- Ravager cast
-        name = "Ravager",
-        spellId = 228920,
-        isRavager = true,  -- Flag for special handling
-        damageSpells = {
-            [156287] = true,  -- Update to correct damage spell ID
-        }
-    },
-    -- Odyn's Fury (special tracking)
-    [385059] = { -- Odyn's Fury cast
-        name = "Odyn's Fury",
-        spellId = 385059,
-        isOdynsFury = true,  -- Flag for special handling
-        damageSpells = {
-            [385060] = true,  -- Main hand and DoT
-            [385061] = true,  -- Off-hand
-            [385062] = true,  -- Additional damage
-        }
-    },
-}
-
--- Whirlwind buff tracking
-local WHIRLWIND_BUFF_ID = 85739  -- Whirlwind buff ID
+local addon = {}
+addon.activeSequences = {}
 addon.hasWhirlwindBuff = false
 
-local FURY_ABILITIES = {
-    -- Rampage
-    [184707] = { name = "Rampage", hits = 4, isRampage = true },
-    [184709] = { name = "Rampage", hits = 4, isRampage = true },
-    [201364] = { name = "Rampage", hits = 4, isRampage = true },
-    [201363] = { name = "Rampage", hits = 4, isRampage = true },
-    
-    -- Raging Blow
-    [85288] = { name = "Raging Blow", hits = 2, isRagingBlow = true },
-    [96103] = { name = "Raging Blow", hits = 2, isRagingBlow = true },
-    [85384] = { name = "Raging Blow", hits = 2, isRagingBlow = true },
-    
-    -- Execute
-    [280849] = { name = "Execute", hits = 2, isExecute = true },  -- Execute 1
-    [163558] = { name = "Execute", hits = 2, isExecute = true },  -- Execute 2
-    [5308] = { name = "Execute", hits = 2, isExecute = true },    -- Low health Execute
-    
-    -- Single hit abilities
-    [23881] = { name = "Bloodthirst", hits = 1 },
-    [396718] = { name = "Onslaught", hits = 1 },  -- Update damage spell ID
+-- **Ability Definitions**
+local ABILITY_INFO = {
+    ["Rampage"] = { isSpecial = false },
+    ["Raging Blow"] = { isSpecial = false },
+    ["Execute"] = { isSpecial = false },
+    ["Bloodthirst"] = { isSpecial = false },
+    ["Thunder Clap"] = { isSpecial = false },
+    ["Thunder Blast"] = { isSpecial = true, handler = "HandleThunderBlast" },
+    ["Onslaught"] = { isSpecial = false },
+    ["Thunderous Roar"] = { isSpecial = true, handler = "HandleThunderousRoar" },
+    ["Ravager"] = { isSpecial = true, handler = "HandleRavager" },
+    ["Odyn's Fury"] = { isSpecial = true, handler = "HandleOdynsFury" },
 }
 
--- Track active ability hits
-addon.activeSequence = nil  -- Current active sequence being tracked
-
--- Add to the top with other constants
+-- **Special Ability Tables**
 local THUNDEROUS_ROAR = {
     CAST_ID = 384318,
     DOT_ID = 397364,
@@ -160,618 +25,426 @@ local THUNDEROUS_ROAR = {
     active = false,
     targets = {},
     totalDamage = 0,
+    startTime = 0,
 }
 
--- Add near the top with other constants
 local RAVAGER = {
     CAST_ID = 228920,
-    DAMAGE_ID = 156287,  -- Add damage spell ID
+    DAMAGE_ID = 156287,
     name = "Ravager",
     active = false,
     totalDamage = 0,
     startTime = 0,
-    DURATION = 11,  -- Duration in seconds to track damage
+    DURATION = 11,
+    hasCrit = false,
 }
 
--- Add near the top with other constants
 local ODYNS_FURY = {
     CAST_ID = 385059,
     DAMAGE_IDS = {
-        [385060] = true,  -- Main hand damage and DoT
-        [385061] = true,  -- Off-hand damage
-        [385062] = true,  -- Additional damage
+        [385060] = true,  -- Main hand
+        [385061] = true,  -- Off hand
+        [385062] = true,  -- Additional strikes
     },
     name = "Odyn's Fury",
     active = false,
     targets = {},
     totalDamage = 0,
     startTime = 0,
-    DURATION = 5,  -- Failsafe duration in seconds
+    DURATION = 5,
+    displayTimer = nil,
 }
 
--- Initialize saved variables
-function CH:Init()
-    -- Initialize or load saved variables
+local THUNDER_BLAST = {
+    BUFF_ID = 435615,  -- Thunder Blast buff
+    CAST_ID = 435222,  -- Main Thunder Blast
+    PRIMARY_DAMAGE_IDS = {
+        [435222] = true,  -- Thunder Blast
+        [436793] = true,  -- Thunder Blast (additional)
+    },
+    SECONDARY_DAMAGE_IDS = {
+        [435791] = true,  -- Lightning Strike
+        [460670] = true,  -- Lightning Strike Ground Current
+    },
+    name = "Thunder Blast",
+    active = false,
+    totalDamage = 0,
+    startTime = 0,
+    DURATION = 1.5,
+    hasCrit = false,
+    displayTimer = nil,
+    primaryHit = false, -- Track if we've seen a primary Thunder Blast hit
+}
+
+-- **Initialize Saved Variables**
+function addon:Init()
     CombineHitsDB = CombineHitsDB or {}
-    
-    for k, v in pairs(addon.defaults) do
+    for k, v in pairs(self.defaults) do
         if CombineHitsDB[k] == nil then
             CombineHitsDB[k] = v
         end
     end
-    
-    -- Ensure point exists in framePosition
     if not CombineHitsDB.framePosition.point then
         CombineHitsDB.framePosition.point = "CENTER"
     end
-    
-    -- Register for PLAYER_LOGIN to initialize UI
-    CH:RegisterEvent("PLAYER_LOGIN")
-end
-
--- Initialize UI after game is fully loaded
-function CH:InitializeUI()
-    CH:CreateMainFrame()
-    CH:CreateLeaderboardFrame()
-    CH:CreateDisplayFrames()
-    CH:UpdateFrameSizes()
-    CH:RegisterEvents()
-end
-
--- Create the main frame to display hits
-function CH:CreateMainFrame()
-    local f = CreateFrame("Frame", "CombineHitsMainFrame", UIParent, "BackdropTemplate")
-    addon.mainFrame = f
-    
-    -- Set size
-    f:SetSize(CombineHitsDB.frameWidth, CombineHitsDB.frameHeight)
-    
-    -- Set frame strata
-    f:SetFrameStrata("MEDIUM")
-    
-    -- Set initial position
-    f:ClearAllPoints()
-    f:SetPoint(CombineHitsDB.framePosition.point, UIParent, CombineHitsDB.framePosition.point, 
-               CombineHitsDB.framePosition.x, CombineHitsDB.framePosition.y)
-    
-    -- Set backdrop
-    f:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 16,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 }
-    })
-    f:SetBackdropColor(0, 0, 0, CombineHitsDB.frameAlpha)
-    f:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
-    
-    -- Make frame movable
-    f:SetMovable(true)
-    f:EnableMouse(true)
-    f:RegisterForDrag("LeftButton")
-    
-    -- Simple movement handlers
-    f:SetScript("OnDragStart", function(self)
-        self:StartMoving()
-    end)
-    
-    f:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        
-        -- Get frame position directly
-        local point, _, _, xOfs, yOfs = self:GetPoint(1)
-        
-        -- Save position and anchor point
-        CombineHitsDB.framePosition.point = point
-        CombineHitsDB.framePosition.x = xOfs
-        CombineHitsDB.framePosition.y = yOfs
-    end)
-    
-    -- Show/hide based on saved setting
-    if CombineHitsDB.frameVisible then
-        f:Show()
-    else
-        f:Hide()
+    if CombineHitsDB.isLocked == nil then
+        CombineHitsDB.isLocked = false
     end
-    
-    return f
-end
-
--- Create display frames for showing damage
-function CH:CreateDisplayFrames()
-    addon.displayFrames = {}
-    local prevFrame = nil
-    local spacing = 1
-    
-    for i = 1, CombineHitsDB.maxDisplayed do
-        local frame = CreateFrame("Frame", "CombineHitsDisplay"..i, addon.mainFrame)
-        local frameHeight = (CombineHitsDB.frameHeight - 20) / CombineHitsDB.maxDisplayed
-        frame:SetSize(CombineHitsDB.frameWidth - 20, frameHeight)
-        
-        -- Create ability name text
-        local abilityText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        abilityText:SetPoint("LEFT", frame, "LEFT", 5, 0)
-        abilityText:SetFont("Fonts\\FRIZQT__.TTF", CombineHitsDB.fontSize, "OUTLINE")
-        abilityText:SetJustifyH("LEFT")
-        abilityText:SetWidth(110)
-        frame.abilityText = abilityText
-        
-        -- Create damage text
-        local damageText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        damageText:SetPoint("LEFT", abilityText, "RIGHT", 10, 0)
-        damageText:SetPoint("RIGHT", frame, "RIGHT", -5, 0)
-        damageText:SetFont("Fonts\\FRIZQT__.TTF", CombineHitsDB.fontSize, "OUTLINE")
-        damageText:SetJustifyH("RIGHT")
-        frame.damageText = damageText
-        
-        -- Position frame relative to main frame
-        frame:ClearAllPoints()
-        local yOffset = -5 - ((i-1) * (frameHeight + spacing))
-        frame:SetPoint("TOPLEFT", addon.mainFrame, "TOPLEFT", 10, yOffset)
-        
-        -- Hide initially
-        frame.abilityText:Hide()
-        frame.damageText:Hide()
-        
-        prevFrame = frame
-        table.insert(addon.displayFrames, frame)
-    end
-end
-
--- Event handling
-function CH:RegisterEvents()
-    CH:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-    CH:RegisterEvent("UNIT_AURA")
-end
-
--- Display a hit in the frame
-function CH:DisplayHit(sequence)
-    -- Check if this is a new record
-    if sequence.damage > 0 then
-        local currentRecord = CombineHitsDB.leaderboard[sequence.name]
-        if not currentRecord or sequence.damage > currentRecord.damage then
-            CombineHitsDB.leaderboard[sequence.name] = {
-                damage = sequence.damage,
-                timestamp = time(),
-                zone = GetZoneText(),
-                subZone = GetSubZoneText(),
-            }
-        end
-    end
-
-    -- Format damage number with commas
-    local formattedDamage = CH:FormatNumber(sequence.damage)
-    
-    -- Shift existing hits down
-    for i = #addon.displayFrames, 2, -1 do
-        local prevFrame = addon.displayFrames[i-1]
-        local currentFrame = addon.displayFrames[i]
-        
-        if prevFrame.damageText:GetText() and prevFrame.damageText:GetText() ~= "" then
-            -- Copy text and colors from previous frame
-            local prevColor = { prevFrame.damageText:GetTextColor() }
-            local prevAlpha = prevFrame.damageText:GetAlpha()
-            
-            if prevAlpha > 0 then
-                currentFrame.abilityText:SetText(prevFrame.abilityText:GetText())
-                currentFrame.damageText:SetText(prevFrame.damageText:GetText())
-                currentFrame.abilityText:Show()
-                currentFrame.damageText:Show()
-                currentFrame.damageText:SetTextColor(unpack(prevColor))
-                currentFrame.abilityText:SetTextColor(unpack(prevColor))
-                currentFrame.damageText:SetAlpha(prevAlpha)
-                currentFrame.abilityText:SetAlpha(prevAlpha)
-                
-                -- Continue fading if in progress
-                if prevAlpha < 1 then
-                    CH:FadeOut(currentFrame)
-                end
-            end
-        else
-            -- Clear empty frame
-            currentFrame.abilityText:SetText("")
-            currentFrame.damageText:SetText("")
-            currentFrame.abilityText:Hide()
-            currentFrame.damageText:Hide()
-        end
-    end
-    
-    -- Display new hit at the top
-    local topFrame = addon.displayFrames[1]
-    topFrame.abilityText:SetText(sequence.name)
-    topFrame.damageText:SetText(formattedDamage)
-    topFrame.abilityText:Show()
-    topFrame.damageText:Show()
-    topFrame.damageText:SetAlpha(1)
-    topFrame.abilityText:SetAlpha(1)
-    
-    -- Set text color based on crit
-    local color = sequence.hasCrit and CombineHitsDB.critColor or CombineHitsDB.textColor
-    topFrame.abilityText:SetTextColor(color.r, color.g, color.b)
-    topFrame.damageText:SetTextColor(color.r, color.g, color.b)
-    
-    -- Start fade for all visible texts
-    for i = 1, #addon.displayFrames do
-        if addon.displayFrames[i].damageText:GetText() and addon.displayFrames[i].damageText:GetText() ~= "" then
-            CH:FadeOut(addon.displayFrames[i])
-        end
-    end
-end
-
--- Check for Whirlwind buff
-function CH:CheckWhirlwindBuff(unit)
-    if unit ~= "player" then return end
-    
-    local name, _, _, _, _, _, _, _, _, spellId = AuraUtil.FindAuraByName("Whirlwind", "player", "HELPFUL")
-    addon.hasWhirlwindBuff = (spellId == WHIRLWIND_BUFF_ID)
-end
-
--- Base structure for new hit sequence
-function CH:CreateNewHitSequence(abilityInfo, now)
-    return {
-        name = abilityInfo.name,
-        icon = abilityInfo.icon,
-        damage = 0,
-        hasCrit = false,
-        startTime = now,
-        lastHitTime = now,
-        whirlwindActive = addon.hasWhirlwindBuff,
-        validSpellIds = abilityInfo.damageSpells  -- Store valid spell IDs for this sequence
-    }
-end
-
--- Add new function for Thunderous Roar tracking
-function CH:HandleThunderousRoar(eventType, destGUID, spellId, amount, critical)
-    if eventType == "SPELL_CAST_SUCCESS" and spellId == THUNDEROUS_ROAR.CAST_ID then
-        -- Reset tracking for new cast
-        THUNDEROUS_ROAR.active = true
-        THUNDEROUS_ROAR.targets = {}
-        THUNDEROUS_ROAR.totalDamage = 0
-        
-    elseif THUNDEROUS_ROAR.active then
-        if eventType == "SPELL_AURA_APPLIED" and spellId == THUNDEROUS_ROAR.DOT_ID then
-            -- Track new target
-            THUNDEROUS_ROAR.targets[destGUID] = true
-            
-        elseif eventType == "SPELL_DAMAGE" and spellId == THUNDEROUS_ROAR.CAST_ID then
-            -- Add initial hit damage
-            THUNDEROUS_ROAR.totalDamage = THUNDEROUS_ROAR.totalDamage + (amount or 0)
-            
-        elseif eventType == "SPELL_PERIODIC_DAMAGE" and spellId == THUNDEROUS_ROAR.DOT_ID then
-            -- Add DoT damage
-            THUNDEROUS_ROAR.totalDamage = THUNDEROUS_ROAR.totalDamage + (amount or 0)
-            
-        elseif eventType == "SPELL_AURA_REMOVED" and spellId == THUNDEROUS_ROAR.DOT_ID then
-            -- Remove target from tracking
-            THUNDEROUS_ROAR.targets[destGUID] = nil
-            
-            -- Check if this was the last target
-            local remainingTargets = 0
-            for _ in pairs(THUNDEROUS_ROAR.targets) do
-                remainingTargets = remainingTargets + 1
-            end
-            
-            if remainingTargets == 0 and THUNDEROUS_ROAR.totalDamage > 0 then
-                -- All targets finished, display total damage
-                local sequence = {
-                    name = THUNDEROUS_ROAR.name,
-                    damage = THUNDEROUS_ROAR.totalDamage,
-                    hasCrit = true,  -- Always show as crit color due to multiple hits
-                }
-                CH:DisplayHit(sequence)
-                
-                -- Reset tracking
-                THUNDEROUS_ROAR.active = false
-                THUNDEROUS_ROAR.totalDamage = 0
-            end
-        end
-    end
-end
-
--- Add new function for Ravager tracking
-function CH:HandleRavager(eventType, spellId, amount, critical)
-    local now = GetTime()
-    
-    if eventType == "SPELL_CAST_SUCCESS" and spellId == RAVAGER.CAST_ID then
-        -- Start new Ravager tracking
-        RAVAGER.active = true
-        RAVAGER.totalDamage = 0
-        RAVAGER.startTime = now
-        
-        -- Set timer to display total after duration
-        C_Timer.After(RAVAGER.DURATION, function()
-            if RAVAGER.active and RAVAGER.totalDamage > 0 then
-                -- Display total damage
-                local sequence = {
-                    name = RAVAGER.name,
-                    damage = RAVAGER.totalDamage,
-                    hasCrit = true,  -- Always show as crit color due to multiple hits
-                }
-                CH:DisplayHit(sequence)
-                
-                -- Reset tracking
-                RAVAGER.active = false
-                RAVAGER.totalDamage = 0
-            end
-        end)
-        
-    elseif RAVAGER.active and eventType == "SPELL_DAMAGE" and spellId == RAVAGER.DAMAGE_ID then
-        -- Add damage if within duration window
-        if (now - RAVAGER.startTime) <= RAVAGER.DURATION then
-            RAVAGER.totalDamage = RAVAGER.totalDamage + (amount or 0)
-        end
-    end
-end
-
--- Add new function for Odyn's Fury tracking
-function CH:HandleOdynsFury(eventType, destGUID, spellId, amount, critical)
-    local now = GetTime()
-    
-    if eventType == "SPELL_CAST_SUCCESS" and spellId == ODYNS_FURY.CAST_ID then
-        -- Start new Odyn's Fury tracking
-        ODYNS_FURY.active = true
-        ODYNS_FURY.targets = {}
-        ODYNS_FURY.totalDamage = 0
-        ODYNS_FURY.startTime = now
-        
-        -- Set failsafe timer
-        C_Timer.After(ODYNS_FURY.DURATION, function()
-            if ODYNS_FURY.active then
-                -- Display total damage if we haven't already
-                local sequence = {
-                    name = ODYNS_FURY.name,
-                    damage = ODYNS_FURY.totalDamage,
-                    hasCrit = true,  -- Always show as crit color due to multiple hits
-                }
-                CH:DisplayHit(sequence)
-                
-                -- Reset tracking
-                ODYNS_FURY.active = false
-                ODYNS_FURY.totalDamage = 0
-                ODYNS_FURY.targets = {}
-            end
-        end)
-        
-    elseif ODYNS_FURY.active then
-        -- Check if we've exceeded the failsafe duration
-        if (now - ODYNS_FURY.startTime) > ODYNS_FURY.DURATION then
-            ODYNS_FURY.active = false
-            return
-        end
-        
-        if eventType == "SPELL_DAMAGE" and ODYNS_FURY.DAMAGE_IDS[spellId] then
-            -- Add direct damage
-            ODYNS_FURY.totalDamage = ODYNS_FURY.totalDamage + (amount or 0)
-            
-        elseif eventType == "SPELL_PERIODIC_DAMAGE" and ODYNS_FURY.DAMAGE_IDS[spellId] then
-            -- Add DoT damage
-            ODYNS_FURY.totalDamage = ODYNS_FURY.totalDamage + (amount or 0)
-            
-        elseif eventType == "SPELL_AURA_APPLIED" and ODYNS_FURY.DAMAGE_IDS[spellId] then
-            -- Track new target
-            ODYNS_FURY.targets[destGUID] = true
-            
-        elseif eventType == "SPELL_AURA_REMOVED" and ODYNS_FURY.DAMAGE_IDS[spellId] then
-            -- Remove target from tracking
-            ODYNS_FURY.targets[destGUID] = nil
-            
-            -- Check if this was the last target
-            local remainingTargets = 0
-            for _ in pairs(ODYNS_FURY.targets) do
-                remainingTargets = remainingTargets + 1
-            end
-            
-            if remainingTargets == 0 and ODYNS_FURY.active then
-                -- All targets finished, display total damage
-                local sequence = {
-                    name = ODYNS_FURY.name,
-                    damage = ODYNS_FURY.totalDamage,
-                    hasCrit = true,  -- Always show as crit color due to multiple hits
-                }
-                CH:DisplayHit(sequence)
-                
-                -- Reset tracking
-                ODYNS_FURY.active = false
-                ODYNS_FURY.totalDamage = 0
-            end
-        end
-    end
-end
-
--- Modify the COMBAT_LOG_EVENT_UNFILTERED function
-function CH:COMBAT_LOG_EVENT_UNFILTERED(...)
-    local timestamp, eventType, _, sourceGUID, _, _, _, destGUID, destName, _, _, spellId, spellName, _, amount, _, _, _, _, _, critical = ...
-    
-    -- Only process player's events
-    if sourceGUID ~= UnitGUID("player") then return end
-    
-    local now = GetTime()
-    
-    -- Handle Thunderous Roar separately
-    if spellId == THUNDEROUS_ROAR.CAST_ID or spellId == THUNDEROUS_ROAR.DOT_ID then
-        CH:HandleThunderousRoar(eventType, destGUID, spellId, amount, critical)
-        return
-    end
-    
-    -- Handle Ravager separately
-    if spellId == RAVAGER.CAST_ID or spellId == RAVAGER.DAMAGE_ID then
-        CH:HandleRavager(eventType, spellId, amount, critical)
-        return
-    end
-    
-    -- Handle Odyn's Fury separately
-    if spellId == ODYNS_FURY.CAST_ID or ODYNS_FURY.DAMAGE_IDS[spellId] then
-        CH:HandleOdynsFury(eventType, destGUID, spellId, amount, critical)
-        return
-    end
-    
-    -- Track Whirlwind buff
-    if eventType == "SPELL_AURA_APPLIED" and spellId == WHIRLWIND_BUFF_ID then
-        addon.hasWhirlwindBuff = true
-    elseif eventType == "SPELL_AURA_REMOVED" and spellId == WHIRLWIND_BUFF_ID then
-        addon.hasWhirlwindBuff = false
-    end
-    
-    -- Handle ability casts to start new sequences
-    if eventType == "SPELL_CAST_SUCCESS" then
-        local abilityInfo = ABILITY_DAMAGE_SPELLS[spellId]
-        if abilityInfo then
-            -- If we have an active sequence, complete it
-            if addon.activeSequence and addon.activeSequence.damage > 0 then
-                CH:DisplayHit(addon.activeSequence)
-            end
-            
-            -- Start new sequence
-            addon.activeSequence = CH:CreateNewHitSequence(abilityInfo, now)
-            
-            -- Set a timer to complete this sequence if it's still active
-            C_Timer.After(2, function()
-                if addon.activeSequence and addon.activeSequence.startTime == now then
-                    if addon.activeSequence.damage > 0 then
-                        CH:DisplayHit(addon.activeSequence)
-                    end
-                    addon.activeSequence = nil
-                end
-            end)
-        end
-    end
-    
-    -- Handle damage events
-    if eventType == "SPELL_DAMAGE" and addon.activeSequence then
-        -- Only process damage if the spell ID is valid for the current sequence
-        if addon.activeSequence.validSpellIds[spellId] then
-            local damage = amount or 0
-            if damage > 0 and (now - addon.activeSequence.startTime) <= 2 then
-                addon.activeSequence.damage = addon.activeSequence.damage + damage
-                addon.activeSequence.hasCrit = addon.activeSequence.hasCrit or critical
-                addon.activeSequence.lastHitTime = now
-            end
-        end
-    end
-end
-
--- Main event handler
-CH:SetScript("OnEvent", function(self, event, ...)
-    if event == "ADDON_LOADED" and ... == addonName then
-        CH:Init()
-    elseif event == "PLAYER_LOGIN" then
-        CH:InitializeUI()
-    elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
-        CH:COMBAT_LOG_EVENT_UNFILTERED(CombatLogGetCurrentEventInfo())
-    elseif event == "UNIT_AURA" then
-        CH:CheckWhirlwindBuff(...)
-    end
-end)
-
--- Fade out a frame's text
-function CH:FadeOut(frame)
-    if frame.damageText.fadeInfo then
-        UIFrameFadeRemoveFrame(frame.damageText)
-        UIFrameFadeRemoveFrame(frame.abilityText)
-    end
-    
-    UIFrameFadeOut(frame.damageText, CombineHitsDB.fadeTime, frame.damageText:GetAlpha(), 0)
-    UIFrameFadeOut(frame.abilityText, CombineHitsDB.fadeTime, frame.abilityText:GetAlpha(), 0)
-    
-    C_Timer.After(CombineHitsDB.fadeTime, function()
-        if frame.damageText:GetAlpha() == 0 then
-            frame.damageText:SetText("")
-            frame.abilityText:SetText("")
-            frame.damageText:Hide()
-            frame.abilityText:Hide()
-        end
-    end)
-end
-
--- Toggle frame visibility
-function CH:ToggleFrame()
-    if CombineHitsDB.frameVisible then
-        addon.mainFrame:Hide()
-        CombineHitsDB.frameVisible = false
-    else
-        addon.mainFrame:Show()
+    if CombineHitsDB.frameVisible == nil then
         CombineHitsDB.frameVisible = true
     end
 end
 
--- Update frame sizes and layout
-function CH:UpdateFrameSizes()
-    -- Update main frame size
-    addon.mainFrame:SetSize(CombineHitsDB.frameWidth, CombineHitsDB.frameHeight)
-    
-    -- Update each display frame
-    local spacing = 1
-    for i, frame in ipairs(addon.displayFrames) do
-        local frameHeight = (CombineHitsDB.frameHeight - 20) / CombineHitsDB.maxDisplayed
-        frame:SetSize(CombineHitsDB.frameWidth - 20, frameHeight)
-        
-        -- Update text positions
-        frame.abilityText:SetWidth(110)
-        frame.damageText:ClearAllPoints()
-        frame.damageText:SetPoint("LEFT", frame.abilityText, "RIGHT", 10, 0)
-        frame.damageText:SetPoint("RIGHT", frame, "RIGHT", -5, 0)
-        
-        -- Position frame relative to main frame
-        frame:ClearAllPoints()
-        local yOffset = -5 - ((i-1) * (frameHeight + spacing))
-        frame:SetPoint("TOPLEFT", addon.mainFrame, "TOPLEFT", 10, yOffset)
+addon.defaults = {
+    framePosition = { x = 0, y = 0, point = "CENTER" },
+    maxDisplayed = 4,
+    fadeTime = 3,
+    frameWidth = 150,
+    frameHeight = 80,
+    frameAlpha = 0.9,
+    frameVisible = true,
+    textColor = { r = 1, g = 1, b = 1 },
+    critColor = { r = 1, g = 0.5, b = 0 },
+    blacklistedSpells = {},
+    combineWindow = 2.5,
+    leaderboard = {},
+    isLocked = false
+}
+
+-- **Initialize Abilities**
+function addon:InitializeAbilities()
+    addon.trackedAbilities = {}
+    for name, info in pairs(ABILITY_INFO) do
+        local spellInfo = C_Spell.GetSpellInfo(name)
+        if spellInfo then
+            addon.trackedAbilities[spellInfo.spellID] = {
+                name = name,
+                isSpecial = info.isSpecial,
+                handler = info.handler
+            }
+        end
     end
 end
 
--- Slash command handling
+-- **Create Main Frame**
+function addon:CreateMainFrame()
+    local frame = CreateFrame("Frame", "CombineHitsMainFrame", UIParent, "BackdropTemplate")
+    frame:SetSize(CombineHitsDB.frameWidth, CombineHitsDB.frameHeight)
+    frame:SetPoint(CombineHitsDB.framePosition.point, UIParent, CombineHitsDB.framePosition.point, CombineHitsDB.framePosition.x, CombineHitsDB.framePosition.y)
+    frame:SetFrameStrata("MEDIUM")
+    frame:SetMovable(true)
+    frame:EnableMouse(not CombineHitsDB.isLocked)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", frame.StartMoving)
+    frame:SetScript("OnDragStop", function()
+        frame:StopMovingOrSizing()
+        local point, _, _, x, y = frame:GetPoint()
+        CombineHitsDB.framePosition.point = point
+        CombineHitsDB.framePosition.x = x
+        CombineHitsDB.framePosition.y = y
+    end)
+    local lockButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    lockButton:SetSize(32, 32)
+    lockButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -2)
+    lockButton:SetNormalTexture("Interface\\Buttons\\LockButton-Unlocked-Up")
+    lockButton:SetPushedTexture("Interface\\Buttons\\LockButton-Unlocked-Down")
+    lockButton:SetHighlightTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight", "ADD")
+    lockButton:SetScript("OnClick", function()
+        CombineHitsDB.isLocked = not CombineHitsDB.isLocked
+        addon:UpdateFrameAppearance(frame)
+    end)
+    frame.lockButton = lockButton
+    addon:UpdateFrameAppearance(frame)
+    return frame
+end
+
+-- **Update Frame Appearance**
+function addon:UpdateFrameAppearance(frame)
+    if CombineHitsDB.isLocked then
+        frame:SetBackdrop(nil)
+        frame.lockButton:Hide()
+        frame:EnableMouse(false)
+    else
+        frame:SetBackdrop({
+            bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+            tile = true,
+            tileSize = 16,
+            insets = { left = 4, right = 4, top = 4, bottom = 4 }
+        })
+        frame:SetBackdropColor(0, 0, 0, CombineHitsDB.frameAlpha)
+        frame.lockButton:Show()
+        frame:EnableMouse(true)
+    end
+end
+
+-- **Create Display Frames**
+function addon:CreateDisplayFrames()
+    addon.displayFrames = {}
+    for i = 1, CombineHitsDB.maxDisplayed do
+        local frame = CreateFrame("Frame", nil, addon.mainFrame)
+        frame:SetSize(CombineHitsDB.frameWidth - 20, 30)
+        local icon = frame:CreateTexture(nil, "ARTWORK")
+        icon:SetSize(20 * 1.5, 20 * 1.5)
+        icon:SetPoint("LEFT", frame, "LEFT", 5, 0)
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        local text = frame:CreateFontString(nil, "OVERLAY")
+        text:SetFont(addon:GetFont(), 20, "OUTLINE")
+        text:SetPoint("LEFT", icon, "RIGHT", 5, 0)
+        text:SetPoint("RIGHT", frame, "RIGHT", -5, 0)
+        text:SetJustifyH("LEFT")
+        text:SetTextColor(CombineHitsDB.textColor.r, CombineHitsDB.textColor.g, CombineHitsDB.textColor.b)
+        frame:SetPoint("BOTTOMLEFT", addon.mainFrame, "BOTTOMLEFT", 0, (i-1) * 30)
+        frame:SetAlpha(0)
+        frame.icon = icon
+        frame.text = text
+        frame.active = false
+        frame.fadeStart = 0
+        frame.fadeTimer = nil
+        table.insert(addon.displayFrames, frame)
+    end
+end
+
+-- **Get Font Helper**
+function addon:GetFont()
+    local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
+    if LSM and LSM:IsValid("font", "Expressway") then
+        return LSM:Fetch("font", "Expressway")
+    end
+    return "Fonts\\FRIZQT__.TTF"
+end
+
+-- **Combat Log Event Handler**
+function addon:OnCombatLogEvent(...)
+    local timestamp, eventType, hideCaster, sourceGUID, sourceName, sourceFlags, sourceRaidFlags, destGUID, destName, destFlags, destRaidFlags, spellId, spellName, spellSchool, amount, overkill, school, resisted, blocked, absorbed, critical = CombatLogGetCurrentEventInfo()
+    local now = GetTime()
+    if sourceGUID ~= UnitGUID("player") then return end
+
+    -- Handle Ravager events first
+    if spellId == RAVAGER.CAST_ID or spellId == RAVAGER.DAMAGE_ID then
+        if eventType == "SPELL_CAST_SUCCESS" then
+            self:HandleRavager(eventType, spellId, amount, critical)
+            return
+        elseif eventType == "SPELL_DAMAGE" then
+            self:HandleRavager(eventType, spellId, amount, critical)
+            return
+        end
+    end
+    
+    -- Rest of the combat log handling...
+
+    if eventType == "SPELL_CAST_SUCCESS" then
+        local ability = addon.trackedAbilities[spellId]
+        if ability then
+            if ability.isSpecial then
+                addon[ability.handler](addon, eventType, destGUID, spellId, amount, critical)
+            end
+            if not ability.isSpecial then
+                local sequenceKey = ability.name .. "_" .. now
+                addon.activeSequences[sequenceKey] = {
+                    name = ability.name,
+                    spellId = spellId,
+                    damage = 0,
+                    hasCrit = false,
+                    startTime = now,
+                    lastHitTime = now,
+                    whirlwindActive = addon.hasWhirlwindBuff
+                }
+                C_Timer.After(2, function()
+                    local sequence = addon.activeSequences[sequenceKey]
+                    if sequence and sequence.damage > 0 then
+                        addon:DisplayHit(sequence)
+                        addon.activeSequences[sequenceKey] = nil
+                    end
+                end)
+            end
+        end
+    elseif eventType == "SPELL_DAMAGE" then
+        for key, sequence in pairs(addon.activeSequences) do
+            if spellName == sequence.name and (now - sequence.startTime) <= 2 then
+                sequence.damage = sequence.damage + (amount or 0)
+                sequence.hasCrit = sequence.hasCrit or critical
+                sequence.lastHitTime = now
+            end
+        end
+        if spellId == THUNDEROUS_ROAR.CAST_ID then
+            addon:HandleThunderousRoar(eventType, destGUID, spellId, amount, critical)
+        end
+        if ODYNS_FURY.DAMAGE_IDS[spellId] then
+            addon:HandleOdynsFury(eventType, destGUID, spellId, amount, critical)
+        end
+        if spellId == THUNDER_BLAST.BUFF_ID or THUNDER_BLAST.PRIMARY_DAMAGE_IDS[spellId] then
+            self:HandleThunderBlast(eventType, destGUID, spellId, amount, critical)
+            return -- Add return to prevent further processing
+        end
+    elseif eventType == "SPELL_PERIODIC_DAMAGE" then
+        if spellId == THUNDEROUS_ROAR.DOT_ID then
+            addon:HandleThunderousRoar(eventType, destGUID, spellId, amount, critical)
+        end
+    elseif eventType == "SPELL_AURA_APPLIED" or eventType == "SPELL_AURA_REMOVED" then
+        if spellId == THUNDEROUS_ROAR.DOT_ID then
+            addon:HandleThunderousRoar(eventType, destGUID, spellId, amount, critical)
+        end
+        if ODYNS_FURY.DAMAGE_IDS[spellId] then
+            addon:HandleOdynsFury(eventType, destGUID, spellId, amount, critical)
+        end
+    end
+end
+
+-- **Unit Aura Event Handler**
+function addon:OnUnitAura(unit)
+    if unit == "player" then
+        addon.hasWhirlwindBuff = AuraUtil.FindAuraByName("Whirlwind", "player", "HELPFUL") ~= nil
+    end
+end
+
+-- **Display Hit**
+function addon:DisplayHit(sequence)
+    for i = #addon.displayFrames, 2, -1 do
+        local currentFrame = addon.displayFrames[i]
+        local prevFrame = addon.displayFrames[i-1]
+        if prevFrame.active then
+            currentFrame.icon:SetTexture(prevFrame.icon:GetTexture())
+            currentFrame.text:SetText(prevFrame.text:GetText())
+            currentFrame.text:SetTextColor(prevFrame.text:GetTextColor())
+            currentFrame.active = true
+            currentFrame.fadeStart = prevFrame.fadeStart
+            if currentFrame.fadeTimer then
+                currentFrame.fadeTimer:Cancel()
+            end
+            local remainingTime = math.max(0, 2 - (GetTime() - prevFrame.fadeStart))
+            currentFrame.fadeTimer = C_Timer.NewTimer(remainingTime, function()
+                addon:FadeOut(currentFrame)
+            end)
+            currentFrame:SetAlpha(prevFrame:GetAlpha())
+        else
+            addon:FadeOut(currentFrame)
+        end
+    end
+    local targetFrame = addon.displayFrames[1]
+    if targetFrame.fadeTimer then
+        targetFrame.fadeTimer:Cancel()
+    end
+    targetFrame:SetAlpha(0)
+    
+    local spellInfo = C_Spell.GetSpellInfo(sequence.spellId)
+    
+    if spellInfo and spellInfo.iconID then
+        targetFrame.icon:SetTexture(spellInfo.iconID)
+    else
+        targetFrame.icon:SetTexture(134400)
+    end
+    
+    targetFrame.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    local text = addon:FormatNumber(sequence.damage)
+    targetFrame.text:SetText(text)
+    
+    if sequence.hasCrit then
+        targetFrame.text:SetTextColor(CombineHitsDB.critColor.r, CombineHitsDB.critColor.g, CombineHitsDB.critColor.b)
+    else
+        targetFrame.text:SetTextColor(CombineHitsDB.textColor.r, CombineHitsDB.textColor.g, CombineHitsDB.textColor.b)
+    end
+    
+    targetFrame.active = true
+    targetFrame.fadeStart = GetTime()
+    UIFrameFadeIn(targetFrame, 0.3, 0, 1)
+    targetFrame.fadeTimer = C_Timer.NewTimer(2, function()
+        addon:FadeOut(targetFrame)
+    end)
+
+    -- Save to leaderboard if it's a new record
+    if sequence.damage > 0 then
+        local currentRecord = CombineHitsDB.leaderboard[sequence.name]
+        if not currentRecord or sequence.damage > currentRecord.damage then
+            local zone = GetRealZoneText()
+            local subZone = GetSubZoneText()
+            local targetName = UnitName("target") or "Unknown Target"
+            
+            CombineHitsDB.leaderboard[sequence.name] = {
+                damage = sequence.damage,
+                timestamp = time(),
+                zone = zone,
+                subZone = subZone,
+                target = targetName
+            }
+            print(string.format("New record for %s: %s! (Target: %s)", 
+                sequence.name, 
+                addon:FormatNumber(sequence.damage),
+                targetName
+            ))
+        end
+    end
+end
+
+-- **Fade Out Frame**
+function addon:FadeOut(frame)
+    if not frame.active then return end
+    frame.active = false
+    UIFrameFadeOut(frame, 0.3, frame:GetAlpha(), 0)
+    C_Timer.After(0.3, function()
+        frame.text:SetText("")
+        frame.icon:SetTexture(nil)
+        frame.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    end)
+    if frame.fadeTimer then
+        frame.fadeTimer:Cancel()
+        frame.fadeTimer = nil
+    end
+end
+
+-- **Format Number**
+function addon:FormatNumber(number)
+    if number >= 1000000 then
+        return string.format("%.1fM", number / 1000000)
+    elseif number >= 1000 then
+        return string.format("%dK", math.floor(number / 1000))
+    else
+        return tostring(number)
+    end
+end
+
+-- **Slash Commands**
 SLASH_COMBINEHITS1 = "/ch"
 SLASH_COMBINEHITS2 = "/combinehits"
 SlashCmdList["COMBINEHITS"] = function(msg)
-    local cmd, rest = msg:match("^(%S*)%s*(.-)$")
-    cmd = cmd:lower()
-    
-    if cmd == "reset" then
-        -- Reset to center of screen
+    local cmd = msg:trim():lower()
+    if cmd == "lock" then
+        CombineHitsDB.isLocked = not CombineHitsDB.isLocked
+        addon:UpdateFrameAppearance(addon.mainFrame)
+        print("Frame " .. (CombineHitsDB.isLocked and "locked" or "unlocked"))
+    elseif cmd == "reset" then
         CombineHitsDB.framePosition.point = "CENTER"
         CombineHitsDB.framePosition.x = 0
         CombineHitsDB.framePosition.y = 0
-        CombineHitsDB.frameWidth = addon.defaults.frameWidth
-        CombineHitsDB.frameHeight = addon.defaults.frameHeight
-        
-        -- Update frame
         addon.mainFrame:ClearAllPoints()
         addon.mainFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-        CH:UpdateFrameSizes()
-    elseif cmd == "show" or cmd == "" then
-        CH:ToggleFrame()
+        print("Frame position reset to center")
     elseif cmd == "lb" then
         if addon.leaderboardFrame:IsShown() then
             addon.leaderboardFrame:Hide()
         else
-            CH:UpdateLeaderboard()
+            addon:UpdateLeaderboard()
             addon.leaderboardFrame:Show()
         end
     else
         print("CombineHits commands:")
-        print("  /ch - Toggle frame visibility")
-        print("  /ch reset - Reset position and size to center")
+        print("  /ch lock - Toggle frame lock")
+        print("  /ch reset - Reset position")
         print("  /ch lb - Toggle leaderboard")
     end
 end
 
--- Create the leaderboard frame
-function CH:CreateLeaderboardFrame()
+-- **Create Leaderboard Frame**
+function addon:CreateLeaderboardFrame()
     local f = CreateFrame("Frame", "CombineHitsLeaderboard", UIParent, "BasicFrameTemplateWithInset")
     addon.leaderboardFrame = f
-    
-    -- Increase width for two columns
-    f:SetSize(600, 480)  -- Doubled width from 300 to 600
+    f:SetSize(600, 480)
     f:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     f:SetFrameStrata("HIGH")
-    
     f.TitleText:SetText("Big Hits Leaderboard")
-    
-    -- Create the content frame with explicit size
     local content = CreateFrame("Frame", nil, f)
     content:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -8)
-    content:SetSize(584, 452)  -- Adjusted for wider frame (600 - 16 for borders)
+    content:SetSize(584, 452)
     f.content = content
-    
-    -- Create clear button
     local clearButton = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     clearButton:SetSize(100, 25)
     clearButton:SetPoint("BOTTOM", f, "BOTTOM", 0, 10)
@@ -779,8 +452,6 @@ function CH:CreateLeaderboardFrame()
     clearButton:SetScript("OnClick", function()
         StaticPopup_Show("COMBINEHITS_CLEAR_LEADERBOARD")
     end)
-    
-    -- Create confirmation dialog
     StaticPopupDialogs["COMBINEHITS_CLEAR_LEADERBOARD"] = {
         text = "Are you sure you want to clear all leaderboard records?",
         button1 = "Yes",
@@ -788,20 +459,19 @@ function CH:CreateLeaderboardFrame()
         OnAccept = function()
             CombineHitsDB.leaderboard = {}
             print("CombineHits: Leaderboard has been cleared.")
-            CH:UpdateLeaderboard()
+            addon:UpdateLeaderboard()
         end,
         timeout = 0,
         whileDead = true,
         hideOnEscape = true,
         preferredIndex = 3,
     }
-    
     f:Hide()
     return f
 end
 
--- Update leaderboard display
-function CH:UpdateLeaderboard()
+-- **Update Leaderboard**
+function addon:UpdateLeaderboard()
     local frame = addon.leaderboardFrame
     local content = frame.content
     
@@ -811,36 +481,34 @@ function CH:UpdateLeaderboard()
         child:SetParent(nil)
     end
     
-    -- Sort abilities alphabetically
+    -- Convert records to sorted array
     local sortedRecords = {}
     for ability, record in pairs(CombineHitsDB.leaderboard) do
         table.insert(sortedRecords, {name = ability, data = record})
     end
+    
+    -- Sort records
     table.sort(sortedRecords, function(a, b) return a.name < b.name end)
-    
-    -- Calculate content widths for two columns (account for padding)
-    local columnWidth = (content:GetWidth() - 40) / 2  -- 40px for padding between and on sides
+
+    local columnWidth = (content:GetWidth() - 40) / 2
     local yOffset = 0
-    
-    -- Create entries in two columns
     for i = 1, #sortedRecords, 2 do
-        -- Create container for this row
+        -- Left Entry
         local leftEntry = CreateFrame("Frame", nil, content)
-        leftEntry:SetSize(columnWidth, 65)
+        leftEntry:SetSize(columnWidth, 85)  -- Increased height to accommodate new line
         leftEntry:SetPoint("TOPLEFT", content, "TOPLEFT", 10, -yOffset - 30)
         
-        -- Left column
-        -- Ability name and damage
+        -- Header (Ability name and damage)
         local leftHeader = leftEntry:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        leftHeader:SetFont(addon:GetFont(), 14, "OUTLINE")
         leftHeader:SetPoint("TOPLEFT", leftEntry, "TOPLEFT", 0, 0)
         leftHeader:SetWidth(columnWidth)
         leftHeader:SetJustifyH("LEFT")
-        leftHeader:SetText(string.format("%s: |cffFFD700%s|r", 
-            sortedRecords[i].name, 
-            CH:FormatNumber(sortedRecords[i].data.damage)))
+        leftHeader:SetText(string.format("%s: |cffFFD700%s|r", sortedRecords[i].name, addon:FormatNumber(sortedRecords[i].data.damage)))
         
         -- Location
         local leftLocation = leftEntry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        leftLocation:SetFont(addon:GetFont(), 12, "OUTLINE")
         leftLocation:SetPoint("TOPLEFT", leftHeader, "BOTTOMLEFT", 20, -5)
         leftLocation:SetWidth(columnWidth - 20)
         leftLocation:SetJustifyH("LEFT")
@@ -850,31 +518,42 @@ function CH:UpdateLeaderboard()
         end
         leftLocation:SetText("|cffAAAAAA" .. leftLocationText .. "|r")
         
+        -- Target (new)
+        local leftTarget = leftEntry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        leftTarget:SetFont(addon:GetFont(), 12, "OUTLINE")
+        leftTarget:SetPoint("TOPLEFT", leftLocation, "BOTTOMLEFT", 0, -5)
+        leftTarget:SetWidth(columnWidth - 20)
+        leftTarget:SetJustifyH("LEFT")
+        if sortedRecords[i].data.target then
+            leftTarget:SetText("|cffFFFFFFTarget: " .. sortedRecords[i].data.target .. "|r")
+        end
+        
         -- Time
-        local leftTimeString = date("%m/%d/%Y %I:%M %p", sortedRecords[i].data.timestamp)
         local leftTime = leftEntry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        leftTime:SetPoint("TOPLEFT", leftLocation, "BOTTOMLEFT", 0, -5)
+        leftTime:SetFont(addon:GetFont(), 12, "OUTLINE")
+        leftTime:SetPoint("TOPLEFT", leftTarget, "BOTTOMLEFT", 0, -5)
         leftTime:SetWidth(columnWidth - 20)
         leftTime:SetJustifyH("LEFT")
+        local leftTimeString = date("%m/%d/%Y %I:%M %p", sortedRecords[i].data.timestamp)
         leftTime:SetText("|cffAAAAAA" .. leftTimeString .. "|r")
-        
-        -- Right column if we have an entry
+
+        -- Right Entry
         if sortedRecords[i + 1] then
             local rightEntry = CreateFrame("Frame", nil, content)
-            rightEntry:SetSize(columnWidth, 65)
+            rightEntry:SetSize(columnWidth, 85)  -- Increased height to accommodate new line
             rightEntry:SetPoint("TOPLEFT", content, "TOPLEFT", columnWidth + 30, -yOffset - 30)
             
-            -- Ability name and damage
+            -- Header
             local rightHeader = rightEntry:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+            rightHeader:SetFont(addon:GetFont(), 14, "OUTLINE")
             rightHeader:SetPoint("TOPLEFT", rightEntry, "TOPLEFT", 0, 0)
             rightHeader:SetWidth(columnWidth)
             rightHeader:SetJustifyH("LEFT")
-            rightHeader:SetText(string.format("%s: |cffFFD700%s|r", 
-                sortedRecords[i + 1].name, 
-                CH:FormatNumber(sortedRecords[i + 1].data.damage)))
+            rightHeader:SetText(string.format("%s: |cffFFD700%s|r", sortedRecords[i + 1].name, addon:FormatNumber(sortedRecords[i + 1].data.damage)))
             
             -- Location
             local rightLocation = rightEntry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            rightLocation:SetFont(addon:GetFont(), 12, "OUTLINE")
             rightLocation:SetPoint("TOPLEFT", rightHeader, "BOTTOMLEFT", 20, -5)
             rightLocation:SetWidth(columnWidth - 20)
             rightLocation:SetJustifyH("LEFT")
@@ -884,20 +563,232 @@ function CH:UpdateLeaderboard()
             end
             rightLocation:SetText("|cffAAAAAA" .. rightLocationText .. "|r")
             
+            -- Target (new)
+            local rightTarget = rightEntry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            rightTarget:SetFont(addon:GetFont(), 12, "OUTLINE")
+            rightTarget:SetPoint("TOPLEFT", rightLocation, "BOTTOMLEFT", 0, -5)
+            rightTarget:SetWidth(columnWidth - 20)
+            rightTarget:SetJustifyH("LEFT")
+            if sortedRecords[i + 1].data.target then
+                rightTarget:SetText("|cffFFFFFFTarget: " .. sortedRecords[i + 1].data.target .. "|r")
+            end
+            
             -- Time
-            local rightTimeString = date("%m/%d/%Y %I:%M %p", sortedRecords[i + 1].data.timestamp)
             local rightTime = rightEntry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            rightTime:SetPoint("TOPLEFT", rightLocation, "BOTTOMLEFT", 0, -5)
+            rightTime:SetFont(addon:GetFont(), 12, "OUTLINE")
+            rightTime:SetPoint("TOPLEFT", rightTarget, "BOTTOMLEFT", 0, -5)
             rightTime:SetWidth(columnWidth - 20)
             rightTime:SetJustifyH("LEFT")
+            local rightTimeString = date("%m/%d/%Y %I:%M %p", sortedRecords[i + 1].data.timestamp)
             rightTime:SetText("|cffAAAAAA" .. rightTimeString .. "|r")
         end
-        
-        yOffset = yOffset + 65 -- Height of entry plus spacing
+        yOffset = yOffset + 85  -- Increased offset to match new height
     end
 end
 
--- Format number with commas
-function CH:FormatNumber(number)
-    return tostring(number):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+-- **Initialize UI**
+function addon:InitializeUI()
+    addon.mainFrame = addon:CreateMainFrame()
+    addon:CreateDisplayFrames()
+    addon:CreateLeaderboardFrame()
+    if CombineHitsDB.frameVisible then
+        addon.mainFrame:Show()
+    else
+        addon.mainFrame:Hide()
+    end
+    addon:UpdateFrameAppearance(addon.mainFrame)
 end
+
+-- **Register Events**
+function addon:RegisterEvents()
+    local frame = CreateFrame("Frame")
+    frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+    frame:RegisterEvent("UNIT_AURA")
+    frame:SetScript("OnEvent", function(self, event, ...)
+        if event == "COMBAT_LOG_EVENT_UNFILTERED" then
+            addon:OnCombatLogEvent(...)
+        elseif event == "UNIT_AURA" then
+            addon:OnUnitAura(...)
+        end
+    end)
+end
+
+-- **Special Ability Handlers**
+function addon:HandleThunderousRoar(eventType, destGUID, spellId, amount, critical)
+    if eventType == "SPELL_CAST_SUCCESS" and spellId == THUNDEROUS_ROAR.CAST_ID then
+        THUNDEROUS_ROAR.active = true
+        THUNDEROUS_ROAR.targets = {}
+        THUNDEROUS_ROAR.totalDamage = 0
+        THUNDEROUS_ROAR.startTime = GetTime()
+        
+        C_Timer.After(10, function()
+            if THUNDEROUS_ROAR.active and THUNDEROUS_ROAR.totalDamage > 0 then
+                local sequence = {
+                    name = THUNDEROUS_ROAR.name,
+                    spellId = THUNDEROUS_ROAR.CAST_ID,
+                    damage = THUNDEROUS_ROAR.totalDamage,
+                    hasCrit = true,
+                }
+                addon:DisplayHit(sequence)
+                THUNDEROUS_ROAR.active = false
+                THUNDEROUS_ROAR.totalDamage = 0
+                THUNDEROUS_ROAR.targets = {}
+            end
+        end)
+    elseif THUNDEROUS_ROAR.active then
+        if eventType == "SPELL_DAMAGE" and spellId == THUNDEROUS_ROAR.CAST_ID then
+            THUNDEROUS_ROAR.totalDamage = THUNDEROUS_ROAR.totalDamage + (amount or 0)
+        elseif eventType == "SPELL_PERIODIC_DAMAGE" and spellId == THUNDEROUS_ROAR.DOT_ID then
+            THUNDEROUS_ROAR.totalDamage = THUNDEROUS_ROAR.totalDamage + (amount or 0)
+        end
+    end
+end
+
+function addon:HandleRavager(eventType, spellId, amount, critical)
+    local now = GetTime()
+    
+    if eventType == "SPELL_CAST_SUCCESS" and spellId == RAVAGER.CAST_ID then
+        RAVAGER.active = true
+        RAVAGER.totalDamage = 0
+        RAVAGER.startTime = now
+        RAVAGER.hasCrit = false
+        RAVAGER.displayTimer = C_Timer.NewTimer(RAVAGER.DURATION + 0.5, function()
+            if RAVAGER.active and RAVAGER.totalDamage > 0 then
+                local sequence = {
+                    name = RAVAGER.name,
+                    spellId = RAVAGER.CAST_ID,
+                    damage = RAVAGER.totalDamage,
+                    hasCrit = RAVAGER.hasCrit,
+                }
+                
+                addon:DisplayHit(sequence)
+            else
+                RAVAGER.active = false
+                RAVAGER.totalDamage = 0
+                RAVAGER.hasCrit = false
+                RAVAGER.displayTimer = nil
+            end
+        end)
+        
+    elseif eventType == "SPELL_DAMAGE" and spellId == RAVAGER.DAMAGE_ID then
+        if RAVAGER.active and (now - RAVAGER.startTime) <= (RAVAGER.DURATION + 0.5) then
+            local newTotal = RAVAGER.totalDamage + (amount or 0)
+            RAVAGER.totalDamage = newTotal
+            RAVAGER.hasCrit = RAVAGER.hasCrit or critical
+        end
+    end
+end
+
+function addon:HandleOdynsFury(eventType, destGUID, spellId, amount, critical)
+    if eventType == "SPELL_CAST_SUCCESS" and spellId == ODYNS_FURY.CAST_ID then
+        ODYNS_FURY.active = true
+        ODYNS_FURY.targets = {}
+        ODYNS_FURY.totalDamage = 0
+        ODYNS_FURY.startTime = GetTime()
+        
+        -- Set up display timer
+        if ODYNS_FURY.displayTimer then
+            ODYNS_FURY.displayTimer:Cancel()
+        end
+        
+        ODYNS_FURY.displayTimer = C_Timer.NewTimer(ODYNS_FURY.DURATION, function()
+            if ODYNS_FURY.active and ODYNS_FURY.totalDamage > 0 then
+                local sequence = {
+                    name = ODYNS_FURY.name,
+                    spellId = ODYNS_FURY.CAST_ID,
+                    damage = ODYNS_FURY.totalDamage,
+                    hasCrit = true,
+                }
+                self:DisplayHit(sequence)
+                
+                -- Reset state
+                ODYNS_FURY.active = false
+                ODYNS_FURY.totalDamage = 0
+                ODYNS_FURY.targets = {}
+                ODYNS_FURY.displayTimer = nil
+            end
+        end)
+        
+    elseif ODYNS_FURY.active then
+        if (now - ODYNS_FURY.startTime) > ODYNS_FURY.DURATION then
+            return
+        end
+        
+        -- Handle all damage events
+        if (eventType == "SPELL_DAMAGE" or eventType == "SPELL_PERIODIC_DAMAGE") and 
+           (ODYNS_FURY.DAMAGE_IDS[spellId] or spellId == ODYNS_FURY.CAST_ID) then
+            local newTotal = ODYNS_FURY.totalDamage + (amount or 0)
+            ODYNS_FURY.totalDamage = newTotal
+            
+        elseif eventType == "SPELL_AURA_APPLIED" and ODYNS_FURY.DAMAGE_IDS[spellId] then
+            ODYNS_FURY.targets[destGUID] = true
+            
+        elseif eventType == "SPELL_AURA_REMOVED" and ODYNS_FURY.DAMAGE_IDS[spellId] then
+            ODYNS_FURY.targets[destGUID] = nil
+        end
+    end
+end
+
+function addon:HandleThunderBlast(eventType, destGUID, spellId, amount, critical)
+    -- Activate only on primary Thunder Blast damage
+    if eventType == "SPELL_DAMAGE" and THUNDER_BLAST.PRIMARY_DAMAGE_IDS[spellId] and not THUNDER_BLAST.active then
+        THUNDER_BLAST.active = true
+        THUNDER_BLAST.totalDamage = 0
+        THUNDER_BLAST.startTime = GetTime()
+        THUNDER_BLAST.hasCrit = false
+        THUNDER_BLAST.primaryHit = true
+        
+        -- Set up display timer
+        if THUNDER_BLAST.displayTimer then
+            THUNDER_BLAST.displayTimer:Cancel()
+        end
+        
+        THUNDER_BLAST.displayTimer = C_Timer.NewTimer(THUNDER_BLAST.DURATION, function()
+            if THUNDER_BLAST.totalDamage > 0 and THUNDER_BLAST.primaryHit then
+                local sequence = {
+                    name = THUNDER_BLAST.name,
+                    spellId = THUNDER_BLAST.CAST_ID,
+                    damage = THUNDER_BLAST.totalDamage,
+                    hasCrit = THUNDER_BLAST.hasCrit,
+                }
+                self:DisplayHit(sequence)
+            end
+            
+            -- Reset state
+            THUNDER_BLAST.active = false
+            THUNDER_BLAST.totalDamage = 0
+            THUNDER_BLAST.hasCrit = false
+            THUNDER_BLAST.primaryHit = false
+            THUNDER_BLAST.displayTimer = nil
+        end)
+    end
+    
+    -- Track damage only if we're active and have seen a primary hit
+    if THUNDER_BLAST.active and THUNDER_BLAST.primaryHit then
+        if eventType == "SPELL_DAMAGE" and 
+           (THUNDER_BLAST.PRIMARY_DAMAGE_IDS[spellId] or THUNDER_BLAST.SECONDARY_DAMAGE_IDS[spellId]) then
+            local newTotal = THUNDER_BLAST.totalDamage + (amount or 0)
+            THUNDER_BLAST.totalDamage = newTotal
+            THUNDER_BLAST.hasCrit = THUNDER_BLAST.hasCrit or critical
+        end
+    end
+end
+
+-- **On Addon Load**
+local function OnLoad()
+    addon:Init()
+    addon:InitializeAbilities()
+    addon:InitializeUI()
+    addon:RegisterEvents()
+end
+
+local loadFrame = CreateFrame("Frame")
+loadFrame:RegisterEvent("ADDON_LOADED")
+loadFrame:RegisterEvent("PLAYER_LOGIN")
+loadFrame:SetScript("OnEvent", function(self, event, ...)
+    if event == "ADDON_LOADED" and ... == "CombineHits" then
+        OnLoad()
+    elseif event == "PLAYER_LOGIN" then
+        -- Additional login logic if needed
+    end
+end)
