@@ -7,28 +7,30 @@ A World of Warcraft addon for Fury Warriors that tracks and combines multi-hit a
 - Fury Warrior specialization only
 
 ## Features
-- Combines multiple hits from abilities into single totals
+- Combines multiple hits from abilities into singularly displayed totals
+- Works in AoE combining all damage done to all targets
 - Tracks highest hits in a leaderboard with location, target, and time
 - Movable/lockable display frame
 
 ## Supported Abilities
-
-- Rampage
-- Raging Blow
-- Execute
+- Rampage (4 hits)
+- Raging Blow (2 hits)
+- Execute (main/offhand)
 - Bloodthirst
 - Thunder Clap
-- Thunder Blast
+- Thunder Blast (includes lightning damage)
 - Onslaught
-- Odyn's Fury
-- Thunderous Roar
-- Ravager
+- Odyn's Fury (initial hit + DoT)
+- Thunderous Roar (initial hit + DoT)
+- Ravager (all damage ticks)
+- Bladestorm
 
 ## Commands
-- `/ch` - Toggle display
+- `/ch` - Show help menu
 - `/ch reset` - Reset position
 - `/ch lock` - Toggle locked frame/transparency
 - `/ch lb` - Toggle leaderboard
+- `/ch debug` - Toggle debug mode
 
 ## Installation
 Extract to `World of Warcraft/_retail_/Interface/AddOns` and enable in the addon list.
