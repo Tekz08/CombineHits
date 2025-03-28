@@ -9,7 +9,6 @@ A World of Warcraft addon for Fury Warriors that tracks and combines multi-hit a
 ## Features
 - Combines multiple hits from abilities into singularly displayed totals
 - Works in AoE combining all damage done to all targets
-- Tracks highest hits in a leaderboard with location, target, and time
 - Movable/lockable display frame
 
 ## Supported Abilities
